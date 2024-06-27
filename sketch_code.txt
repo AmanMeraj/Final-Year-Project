@@ -1,0 +1,106 @@
+#include <Wire.h>
+#include <DFRobot_MLX90614.h>
+#include <DHT.h>
+#include <MAX30105.h>
+
+#define DHT_PIN 2  // DHT22 data pin
+#define DHT_TYPE DHT22  // Define the DHT sensor type
+
+#define DHT_READ_INTERVAL 2000  // Interval between DHT sensor readings (in milliseconds)
+#define NUM_READINGS 5  // Number of readings to average for better accuracy
+
+DHT dht(DHT_PIN, DHT_TYPE);
+DFRobot_MLX90614_I2C sensor; // instantiate an object to drive our MLX90614 sensor
+MAX30105 particleSensor;
+
+void setup() {
+  Serial.begin(9600);
+
+  // Initialize sensors
+  dht.begin();
+  if (!sensor.begin()) { // Start communication with MLX90614 sensor
+    Serial.println("Communication with MLX90614 sensor failed, please check connection");
+    while (1); // Infinite loop to halt further execution if sensor is not found
+  }
+  Serial.println("MLX90614 sensor communication established.");
+
+  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) { // Start communication using fast I2C speed
+    Serial.println("MAX30105 was not found. Please check wiring/power.");
+    while (1); // Infinite loop to halt further execution if sensor is not found
+  }
+  Serial.println("MAX30105 sensor communication established.");
+
+  Serial.println("Place your index finger on the sensor with steady pressure.");
+
+  particleSensor.setup(); // Configure MAX30105 sensor with default settings
+}
+
+void loop() {
+  // Read data from DHT22
+  float temperature = 0.0;
+  float humidity = 0.0;
+  for (int i = 0; i < NUM_READINGS; i++) {
+    temperature += dht.readTemperature();
+    humidity += dht.readHumidity();
+    delay(DHT_READ_INTERVAL / NUM_READINGS); // Delay between readings
+  }
+  temperature /= NUM_READINGS;
+  humidity /= NUM_READINGS;
+
+  // Read raw data from MAX30105 (IR and red LED)
+  uint32_t irValue = particleSensor.getIR();
+  uint32_t redValue = particleSensor.getRed();
+
+  // Calculate SpO2
+  float spo2 = calculateSpo2(irValue, redValue);
+
+  // Read data from MLX90614
+  float objectTemp = sensor.getObjectTempCelsius();
+  float ambientTemp = sensor.getAmbientTempCelsius();
+
+  // Print data to Serial Monitor
+  Serial.println("Sensor Readings:");
+  Serial.print("DHT22 - Temperature: ");
+  Serial.print(temperature);
+  Serial.print(" °C, Humidity: ");
+  Serial.print(humidity);
+  Serial.println(" %");
+
+  // Check if SpO2 is exactly 100 and if the finger is not placed
+  if (spo2 == 100.00 && spo2 == calculateSpo2(irValue, redValue)) {
+    Serial.println("Place your finger on the sensor with steady pressure.");
+  } else {
+    Serial.print("MAX30105 - SpO2: ");
+    Serial.print(spo2);
+    Serial.println(" %");
+  }
+
+  Serial.print("MLX90614 - Object Temperature: ");
+  Serial.print(objectTemp);
+  Serial.print(" °C, Ambient Temperature: ");
+  Serial.print(ambientTemp);
+  Serial.println(" °C");
+
+  Serial.println(); // Add a blank line for readability
+
+  delay(500);  // Delay for 0.5 seconds between readings
+}
+
+float calculateSpo2(uint32_t irValue, uint32_t redValue) {
+  // Check if both IR and red LED values indicate no finger placed
+  if (irValue == 0 && redValue == 0) {
+    return -1; // Return a negative value to indicate no finger detected
+  }
+
+  // Calculate the ratio of red to IR light intensities
+  float ratio = (float)redValue / (float)irValue;
+
+  // Calculate SpO2 using the ratio
+  // This is a simplified formula, actual SpO2 calculation may be more complex
+  float spo2 = 110 - 25 * ratio; // Adjust the coefficients based on your sensor calibration
+
+  // Ensure SpO2 value is within valid range (0-100)
+  spo2 = max(0.0f, min(100.0f, spo2));
+
+  return spo2;
+}
