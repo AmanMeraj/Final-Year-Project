@@ -3,7 +3,7 @@
 
 # Wound Analysis Using Arduino Sensors
 
-**Authors:** [Your Name] and Alfee
+**Authors:** Aman and Alfee
 
 ## Project Overview
 
